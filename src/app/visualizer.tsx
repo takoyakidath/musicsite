@@ -74,14 +74,6 @@ export default function AudioVisualizer({ audioElement, isPlaying, audioContext 
       setupAudioAnalyzer()
     }
 
-    // Also set up when AudioContext state changes
-    const handleStateChange = () => {
-      console.log("AudioContext state changed to:", audioContext.state)
-      if (audioContext.state === "running" && !setupAttemptedRef.current) {
-        setupAudioAnalyzer()
-      }
-    }
-
     // This is a workaround since there's no direct event for AudioContext state changes
     const checkState = setInterval(() => {
       if (audioContext.state === "running" && !setupAttemptedRef.current) {
