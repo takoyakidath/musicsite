@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Play, Pause, SkipForward, Music4, Volume2, VolumeX, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -22,6 +22,20 @@ export default function MusicPlayer() {
   const audioContextRef = useRef<AudioContext | null>(null)
   const hasInitializedRef = useRef(false)
 
+
+  // Select a random track from the available tracks
+  // (This function is already declared later in the code, so this duplicate is removed.)
+  // Select a random track from the available tracks
+  const selectRandomTrack = useCallback((availableTracks = tracks) => {
+    if (availableTracks.length === 0) return
+
+    const randomIndex = Math.floor(Math.random() * availableTracks.length)
+    const newTrack = availableTracks[randomIndex]
+    console.log("Selected track:", newTrack)
+    setCurrentTrack(newTrack)
+    setRetryCount(0) // Reset retry count for new track
+  }, [tracks])
+
   // Fetch music tracks from API
   useEffect(() => {
     const fetchTracks = async () => {
@@ -38,7 +52,12 @@ export default function MusicPlayer() {
 
           // Select a random track on initial load
           if (!currentTrack) {
-            selectRandomTrack(data.tracks)
+            setTimeout(() => {
+              // Ensure selectRandomTrack is called after it's defined
+              if (typeof selectRandomTrack === "function") {
+                selectRandomTrack(data.tracks)
+              }
+            }, 0)
           }
         } else {
           setError("No music tracks found. Please add MP3 files to the /public/music/ folder.")
@@ -50,7 +69,7 @@ export default function MusicPlayer() {
     }
 
     fetchTracks()
-  }, [])
+  }, [currentTrack, selectRandomTrack])
 
   // Initialize audio context when component mounts
   useEffect(() => {
@@ -59,7 +78,7 @@ export default function MusicPlayer() {
       try {
         // Create new AudioContext if it doesn't exist
         if (!audioContextRef.current) {
-          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+          audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
           console.log("AudioContext created with state:", audioContextRef.current.state)
         }
 
@@ -99,16 +118,6 @@ export default function MusicPlayer() {
     }
   }, [])
 
-  // Select a random track from the available tracks
-  const selectRandomTrack = (availableTracks = tracks) => {
-    if (availableTracks.length === 0) return
-
-    const randomIndex = Math.floor(Math.random() * availableTracks.length)
-    const newTrack = availableTracks[randomIndex]
-    console.log("Selected track:", newTrack)
-    setCurrentTrack(newTrack)
-    setRetryCount(0) // Reset retry count for new track
-  }
 
   // Start playback with user interaction
   const startPlayback = async () => {
@@ -323,7 +332,7 @@ export default function MusicPlayer() {
       }
 
       // Create new AudioContext
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
       console.log("AudioContext reset with state:", audioContextRef.current.state)
 
       // Force reload the audio element
@@ -391,7 +400,7 @@ export default function MusicPlayer() {
     } else {
       setIsLoading(false)
     }
-  }, [currentTrack])
+  }, [currentTrack, isPlaying])
 
   // Check if audio is actually playing
   useEffect(() => {
