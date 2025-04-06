@@ -495,38 +495,39 @@ export default function MusicPlayer() {
             />
           </div>
 
-          {/* Start Overlay */}
-          {showStartOverlay && (
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-10">
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.3 }}
-                className="text-center p-6"
-              >
-                <h2 className="text-3xl font-bold text-white mb-6">Music Visualizer</h2>
-                <p className="text-lg text-gray-300 mb-8">
-                  Click the button below to start the music and visualization
-                </p>
-                <Button
-                  size="lg"
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-6 rounded-full text-lg font-medium"
-                  onClick={startPlayback}
-                  disabled={isLoading || !currentTrack}
-                >
-                  {isLoading ? (
-                    <>
-                      <RefreshCw className="mr-2 h-6 w-6 animate-spin" /> Loading...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="mr-2 h-6 w-6" /> Start Music
-                    </>
-                  )}
-                </Button>
-              </motion.div>
-            </div>
-          )}
+          {showStartOverlay && currentTrack && !window.location.href.includes("?robot") && (
+  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+    <motion.div
+      initial={{ scale: 0.9, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="text-center p-6"
+    >
+      <h2 className="text-3xl font-bold text-white mb-6">Music Visualizer</h2>
+      <p className="text-lg text-gray-300 mb-8">
+        Click the button below to start the music and visualization
+      </p>
+      <Button
+        size="lg"
+        className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-6 rounded-full text-lg font-medium"
+        onClick={startPlayback}
+        disabled={isLoading || !currentTrack}
+      >
+        {isLoading ? (
+          <>
+            <RefreshCw className="mr-2 h-6 w-6 animate-spin" /> Loading...
+          </>
+        ) : (
+          <>
+            <Play className="mr-2 h-6 w-6" /> Start Music
+          </>
+        )}
+      </Button>
+    </motion.div>
+  </div>
+)}
+
+
 
           {/* Loading Overlay */}
           {isLoading && !showStartOverlay && (
