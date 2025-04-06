@@ -122,62 +122,50 @@ export default function MusicPlayer() {
   // Start playback with user interaction
   const startPlayback = async () => {
     if (!audioRef.current || !currentTrack) {
-      console.error("Audio element or track not ready")
-      return
+      console.error("Audio element or track not ready");
+      return;
     }
 
-    setIsLoading(true)
-    console.log("Starting playback for:", currentTrack)
+    setIsLoading(true);
+    console.log("Starting playback for:", currentTrack);
 
     try {
       // Ensure AudioContext is initialized and resumed
       if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-        await audioContextRef.current.resume()
-        console.log("AudioContext resumed before playback")
+        await audioContextRef.current.resume();
+        console.log("AudioContext resumed before playback");
       }
 
-      // Make sure the audio is loaded
-      audioRef.current.load()
+      // Only load the audio if it's not already loaded
+      if (audioRef.current.readyState === 0) {
+        audioRef.current.load();
+      }
 
       // Small delay to ensure audio is loaded
       setTimeout(async () => {
         if (audioRef.current) {
           try {
             // Try to play with a promise
-            await audioRef.current.play()
-            console.log("Playback started successfully")
-            setIsPlaying(true)
-            setShowStartOverlay(false)
-            setIsLoading(false)
-            setError(null)
+            await audioRef.current.play();
+            console.log("Playback started successfully");
+            setIsPlaying(true);
+            setShowStartOverlay(false);
+            setIsLoading(false);
+            setError(null);
           } catch (err) {
-            console.error("Playback error:", err)
-            setIsPlaying(false)
-            setIsLoading(false)
-            setError("Failed to play the track. Please try again.")
-
-            // Force reload the audio element
-            if (audioRef.current) {
-              const currentSrc = audioRef.current.querySelector("source")?.src
-              if (currentSrc) {
-                const audioElement = audioRef.current
-                audioElement.innerHTML = ""
-                const source = document.createElement("source")
-                source.src = currentSrc
-                source.type = "audio/mpeg"
-                audioElement.appendChild(source)
-                audioElement.load()
-              }
-            }
+            console.error("Playback error:", err);
+            setIsPlaying(false);
+            setIsLoading(false);
+            setError("Failed to play the track. Please try again.");
           }
         }
-      }, 500)
+      }, 500);
     } catch (err) {
-      console.error("Error preparing for playback:", err)
-      setIsLoading(false)
-      setError("Failed to initialize audio playback. Please reload the page.")
+      console.error("Error preparing for playback:", err);
+      setIsLoading(false);
+      setError("Failed to initialize audio playback. Please reload the page.");
     }
-  }
+  };
 
   // Handle play/pause
   const togglePlayPause = async () => {
