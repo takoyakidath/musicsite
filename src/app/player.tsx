@@ -553,7 +553,7 @@ export default function MusicPlayer() {
                       exit={{ opacity: 0, y: -10 }}
                       className="font-bold text-2xl text-white"
                     >
-                      {currentTrack ? currentTrack.replace(".mp3", "") : "No track selected"}
+                      {currentTrack ? currentTrack.replace(".mp3", "").replace(/_/g, " ") : "No track selected"}
                     </motion.p>
                   </AnimatePresence>
                 </div>
