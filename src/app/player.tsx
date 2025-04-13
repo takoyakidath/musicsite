@@ -10,6 +10,7 @@ import AudioVisualizer from "./visualizer"
 import { motion, AnimatePresence } from "framer-motion"
 
 export default function MusicPlayer() {
+  // 基本的な状態管理
   const [tracks, setTracks] = useState<string[]>([])
   const [currentTrack, setCurrentTrack] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -18,21 +19,20 @@ export default function MusicPlayer() {
   const [showStartOverlay, setShowStartOverlay] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+
+  // 再生位置関連の状態
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
-  const [, setSeekPosition] = useState<number | null>(null)
+
+  // 参照
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const progressBarRef = useRef<HTMLDivElement>(null)
-  const hasInitializedRef = useRef(false)
   const progressIntervalRef = useRef<number | null>(null)
-  // 最後のドラッグ位置を追跡するための状態を追加
-  const lastDragPositionRef = useRef<number | null>(null)
-  // 曲が終了したことを追跡するフラグ
   const trackEndedRef = useRef<boolean>(false)
 
-  // Format time in MM:SS
+  // 時間をMM:SS形式にフォーマット
   const formatTime = (time: number) => {
     if (isNaN(time)) return "00:00"
     const minutes = Math.floor(time / 60)
@@ -40,7 +40,7 @@ export default function MusicPlayer() {
     return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
   }
 
-  // Select a random track from the available tracks
+  // ランダムなトラックを選択
   const selectRandomTrack = useCallback(
     (availableTracks = tracks): string | null => {
       if (availableTracks.length === 0) return null
@@ -49,44 +49,31 @@ export default function MusicPlayer() {
       const newTrack = availableTracks[randomIndex]
       console.log("Selected track:", newTrack)
       setCurrentTrack(newTrack)
-      setRetryCount(0) // Reset retry count for new track
+      setRetryCount(0) // リトライカウントをリセット
       return newTrack
     },
     [tracks],
   )
 
-  // Update progress bar
+  // プログレスバーの更新
   const updateProgress = useCallback(() => {
     if (audioRef.current && !isDragging) {
       setCurrentTime(audioRef.current.currentTime)
 
-      // Update duration if it changed (some browsers might update it as they load more of the file)
+      // 再生時間が変更された場合に更新
       if (audioRef.current.duration !== duration && !isNaN(audioRef.current.duration)) {
         setDuration(audioRef.current.duration)
-      }
-
-      // 曲の終わりに近づいたらログを出力（デバッグ用）
-      if (audioRef.current.duration > 0) {
-        const timeLeft = audioRef.current.duration - audioRef.current.currentTime
-        if (timeLeft < 0.5 && !trackEndedRef.current) {
-          console.log("Track almost ended, time left:", timeLeft)
-        }
       }
     }
   }, [duration, isDragging])
 
-  // Start progress tracking
+  // プログレス追跡の開始
   const startProgressTracking = useCallback(() => {
-    // Clear any existing interval
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current)
-    }
-
-    // Set up a new interval
+    stopProgressTracking()
     progressIntervalRef.current = window.setInterval(updateProgress, 100) as unknown as number
   }, [updateProgress])
 
-  // Stop progress tracking
+  // プログレス追跡の停止
   const stopProgressTracking = useCallback(() => {
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current)
@@ -94,141 +81,109 @@ export default function MusicPlayer() {
     }
   }, [])
 
-  // handleProgressBarInteraction 関数を修正して、より正確な位置計算を行うようにします
+  // プログレスバーの操作
   const handleProgressBarInteraction = useCallback(
-    (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-      if (!progressBarRef.current || !duration || duration <= 0) return
+    (clientX: number) => {
+      if (!progressBarRef.current || !audioRef.current || duration <= 0) return
 
-      try {
-        // Get mouse/touch position
-        let clientX: number
+      // プログレスバーの位置を計算
+      const rect = progressBarRef.current.getBoundingClientRect()
+      const position = (clientX - rect.left) / rect.width
+      const clampedPosition = Math.max(0, Math.min(1, position))
+      const newTime = clampedPosition * duration
 
-        if ("touches" in e && e.touches && e.touches.length > 0) {
-          // Touch event
-          clientX = e.touches[0].clientX
-        } else if ("clientX" in e) {
-          // Mouse event
-          clientX = e.clientX
-        } else {
-          console.error("Could not determine event type or get coordinates")
-          return
-        }
+      // 現在時間を更新
+      setCurrentTime(newTime)
 
-        // Calculate position relative to progress bar
-        const rect = progressBarRef.current.getBoundingClientRect()
-        const position = (clientX - rect.left) / rect.width
-        const clampedPosition = Math.max(0, Math.min(1, position))
-        const newTime = clampedPosition * duration
+      // オーディオの位置を設定
+      audioRef.current.currentTime = newTime
 
-        // Update time and seek position
-        setSeekPosition(clampedPosition)
-        setCurrentTime(newTime)
-
-        // 最後のドラッグ位置を保存
-        lastDragPositionRef.current = clampedPosition
-
-        // ドラッグ中でなければ（クリックのみ）、すぐにシーク
-        if (!isDragging) {
-          if (audioRef.current) {
-            console.log("Click seeking to:", newTime)
-            audioRef.current.currentTime = newTime
-          }
-        } else {
-          // ドラッグ中は視覚的なフィードバックのみ提供（実際のシークはドラッグ終了時に行う）
-          console.log("Dragging to:", newTime)
-        }
-      } catch (err) {
-        console.error("Error in progress bar interaction:", err)
-      }
+      return clampedPosition
     },
-    [duration, isDragging],
+    [duration],
   )
 
-  // handleProgressBarDown 関数を修正して、ドラッグ終了時に確実に曲の位置を更新するようにします
-  const handleProgressBarDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-      try {
-        setIsDragging(true)
-        stopProgressTracking()
-        handleProgressBarInteraction(e)
-
-        // Add document-level event listeners for drag
-        const handleMove = (e: MouseEvent | TouchEvent) => {
-          try {
-            e.preventDefault()
-
-            // Convert to the expected event type
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const syntheticEvent: any = {}
-
-            if ("touches" in e && e.touches && e.touches.length > 0) {
-              // Touch event
-              syntheticEvent.clientX = e.touches[0].clientX
-              syntheticEvent.touches = e.touches
-            } else if ("clientX" in e) {
-              // Mouse event
-              syntheticEvent.clientX = e.clientX
-            } else {
-              console.error("Could not determine event type or get coordinates in move handler")
-              return
-            }
-
-            handleProgressBarInteraction(syntheticEvent)
-          } catch (err) {
-            console.error("Error in move handler:", err)
-          }
-        }
-
-        const handleUp = () => {
-          try {
-            setIsDragging(false)
-
-            // 重要: 最後のドラッグ位置を使用して曲の位置を設定
-            if (audioRef.current && lastDragPositionRef.current !== null) {
-              const newTime = lastDragPositionRef.current * duration
-              console.log("Final seek to position:", lastDragPositionRef.current, "time:", newTime)
-
-              // 曲の位置を設定
-              audioRef.current.currentTime = newTime
-
-              // UIの更新
-              setCurrentTime(newTime)
-            }
-
-            startProgressTracking()
-            setSeekPosition(null)
-
-            // 参照をクリアしない（値は保持しておく）
-            // lastDragPositionRef.current = null;
-
-            // Remove document-level event listeners
-            document.removeEventListener("mousemove", handleMove)
-            document.removeEventListener("touchmove", handleMove)
-            document.removeEventListener("mouseup", handleUp)
-            document.removeEventListener("touchend", handleUp)
-          } catch (err) {
-            console.error("Error in up handler:", err)
-            // エラーが発生しても必ずリスナーを削除
-            document.removeEventListener("mousemove", handleMove)
-            document.removeEventListener("touchmove", handleMove)
-            document.removeEventListener("mouseup", handleUp)
-            document.removeEventListener("touchend", handleUp)
-          }
-        }
-
-        // Add document-level event listeners
-        document.addEventListener("mousemove", handleMove)
-        document.addEventListener("touchmove", handleMove, { passive: false })
-        document.addEventListener("mouseup", handleUp)
-        document.addEventListener("touchend", handleUp)
-      } catch (err) {
-        console.error("Error in progress bar down handler:", err)
-      }
+  // プログレスバーのクリック処理
+  const handleProgressBarClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      handleProgressBarInteraction(e.clientX)
     },
-    [duration, handleProgressBarInteraction, startProgressTracking, stopProgressTracking],
+    [handleProgressBarInteraction],
   )
 
-  // Fetch music tracks from API
+  // プログレスバーのドラッグ開始処理
+  const handleProgressBarMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setIsDragging(true)
+      stopProgressTracking()
+
+      // ドラッグ中の処理
+      const handleMouseMove = (e: MouseEvent) => {
+        e.preventDefault()
+        handleProgressBarInteraction(e.clientX)
+      }
+
+      // ドラッグ終了処理
+      const handleMouseUp = (e: MouseEvent) => {
+        e.preventDefault()
+        setIsDragging(false)
+        handleProgressBarInteraction(e.clientX)
+        startProgressTracking()
+
+        // イベントリスナーを削除
+        document.removeEventListener("mousemove", handleMouseMove)
+        document.removeEventListener("mouseup", handleMouseUp)
+      }
+
+      // イベントリスナーを追加
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    },
+    [handleProgressBarInteraction, startProgressTracking, stopProgressTracking],
+  )
+
+  // タッチデバイス用のプログレスバー処理
+  const handleProgressBarTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      setIsDragging(true)
+      stopProgressTracking()
+
+      if (e.touches.length > 0) {
+        handleProgressBarInteraction(e.touches[0].clientX)
+      }
+
+      // タッチ移動中の処理
+      const handleTouchMove = (e: TouchEvent) => {
+        e.preventDefault()
+        if (e.touches.length > 0) {
+          handleProgressBarInteraction(e.touches[0].clientX)
+        }
+      }
+
+      // タッチ終了処理
+      const handleTouchEnd = (e: TouchEvent) => {
+        setIsDragging(false)
+        if (e.changedTouches.length > 0) {
+          handleProgressBarInteraction(e.changedTouches[0].clientX)
+        }
+        startProgressTracking()
+
+        // イベントリスナーを削除
+        document.removeEventListener("touchmove", handleTouchMove)
+        document.removeEventListener("touchend", handleTouchEnd)
+      }
+
+      // イベントリスナーを追加
+      document.addEventListener("touchmove", handleTouchMove, { passive: false })
+      document.addEventListener("touchend", handleTouchEnd)
+    },
+    [handleProgressBarInteraction, startProgressTracking, stopProgressTracking],
+  )
+
+  // 音楽トラックの取得
   useEffect(() => {
     const fetchTracks = async () => {
       try {
@@ -242,13 +197,9 @@ export default function MusicPlayer() {
           console.log("Tracks loaded:", data.tracks)
           setTracks(data.tracks)
 
-          // 初回ロード時のみ曲を選択（tracks.length === 0 の条件を追加）
-          if (!currentTrack && tracks.length === 0) {
-            setTimeout(() => {
-              if (typeof selectRandomTrack === "function") {
-                selectRandomTrack(data.tracks)
-              }
-            }, 0)
+          // 初回ロード時のみ曲を選択
+          if (!currentTrack && data.tracks.length > 0) {
+            selectRandomTrack(data.tracks)
           }
         } else {
           setError("No music tracks found. Please add MP3 files to the /public/music/ folder.")
@@ -260,14 +211,14 @@ export default function MusicPlayer() {
     }
 
     fetchTracks()
-  }, [currentTrack, selectRandomTrack, tracks.length])
+  }, [currentTrack, selectRandomTrack])
 
-  // Initialize audio context when component mounts
+  // AudioContextの初期化
   useEffect(() => {
-    // Function to create and resume AudioContext
+    // AudioContextの作成と再開
     const initializeAudioContext = async () => {
       try {
-        // Create new AudioContext if it doesn't exist
+        // AudioContextが存在しない場合は作成
         if (!audioContextRef.current) {
           audioContextRef.current = new (
             window.AudioContext ||
@@ -276,46 +227,44 @@ export default function MusicPlayer() {
           console.log("AudioContext created with state:", audioContextRef.current.state)
         }
 
-        // Resume AudioContext if it's suspended
+        // AudioContextが一時停止している場合は再開
         if (audioContextRef.current.state === "suspended") {
           await audioContextRef.current.resume()
           console.log("AudioContext resumed")
         }
-
-        hasInitializedRef.current = true
       } catch (err) {
         console.error("Failed to initialize AudioContext:", err)
         setError("Failed to initialize audio system. Please reload the page.")
       }
     }
 
-    // Initialize on user interaction
+    // ユーザーインタラクションでAudioContextを初期化
     const handleUserInteraction = () => {
       initializeAudioContext()
     }
 
-    // Add event listeners for user interaction
+    // ユーザーインタラクションのイベントリスナーを追加
     window.addEventListener("click", handleUserInteraction)
     window.addEventListener("touchstart", handleUserInteraction)
 
-    // Clean up
+    // クリーンアップ
     return () => {
       window.removeEventListener("click", handleUserInteraction)
       window.removeEventListener("touchstart", handleUserInteraction)
 
-      // Close AudioContext when component unmounts
+      // コンポーネントのアンマウント時にAudioContextを閉じる
       if (audioContextRef.current) {
         audioContextRef.current.close().catch((err) => {
           console.error("Error closing AudioContext:", err)
         })
       }
 
-      // Clear progress tracking interval
+      // プログレス追跡のインターバルをクリア
       stopProgressTracking()
     }
   }, [stopProgressTracking])
 
-  // Start/stop progress tracking based on playback state
+  // 再生状態に基づいてプログレス追跡を開始/停止
   useEffect(() => {
     if (isPlaying) {
       startProgressTracking()
@@ -328,7 +277,7 @@ export default function MusicPlayer() {
     }
   }, [isPlaying, startProgressTracking, stopProgressTracking])
 
-  // Start playback with user interaction
+  // 再生開始
   const startPlayback = useCallback(async () => {
     if (!audioRef.current || !currentTrack) {
       console.error("Audio element or track not ready")
@@ -339,30 +288,28 @@ export default function MusicPlayer() {
     console.log("Starting playback for:", currentTrack)
 
     try {
-      // Ensure AudioContext is initialized and resumed
+      // AudioContextが初期化され、再開されていることを確認
       if (audioContextRef.current && audioContextRef.current.state === "suspended") {
         await audioContextRef.current.resume()
         console.log("AudioContext resumed before playback")
       }
 
-      // Only load the audio if it's not already loaded
+      // オーディオがまだロードされていない場合はロード
       if (audioRef.current.readyState === 0) {
         audioRef.current.load()
       }
 
-      // Small delay to ensure audio is loaded
+      // オーディオがロードされるのを少し待つ
       setTimeout(async () => {
         if (audioRef.current) {
           try {
-            // Try to play with a promise
+            // 再生を試みる
             await audioRef.current.play()
             console.log("Playback started successfully")
             setIsPlaying(true)
             setShowStartOverlay(false)
             setIsLoading(false)
             setError(null)
-
-            // Start tracking progress
             startProgressTracking()
           } catch (err) {
             console.error("Playback error:", err)
@@ -371,15 +318,15 @@ export default function MusicPlayer() {
             setError("Failed to play the track. Please try again.")
           }
         }
-      }, 500)
+      }, 300)
     } catch (err) {
       console.error("Error preparing for playback:", err)
       setIsLoading(false)
       setError("Failed to initialize audio playback. Please reload the page.")
     }
-  }, [audioRef, currentTrack, audioContextRef, startProgressTracking])
+  }, [currentTrack, startProgressTracking])
 
-  // Handle play/pause
+  // 再生/一時停止の切り替え
   const togglePlayPause = async () => {
     if (!audioRef.current) return
 
@@ -391,13 +338,13 @@ export default function MusicPlayer() {
       setIsLoading(true)
 
       try {
-        // Ensure AudioContext is resumed
+        // AudioContextが再開されていることを確認
         if (audioContextRef.current && audioContextRef.current.state === "suspended") {
           await audioContextRef.current.resume()
           console.log("AudioContext resumed before resuming playback")
         }
 
-        // Try to play with a promise
+        // 再生を試みる
         await audioRef.current.play()
         console.log("Playback resumed successfully")
         setIsPlaying(true)
@@ -413,24 +360,49 @@ export default function MusicPlayer() {
     }
   }
 
-  // Handle track ended - play next random track
+  // トラック終了時の処理 - 次のランダムなトラックを再生
   const handleTrackEnded = useCallback(() => {
-    console.log("Track ended event fired, selecting next track")
+    console.log("Track ended, selecting next track")
     trackEndedRef.current = true
     stopProgressTracking()
     setCurrentTime(0)
 
-    // 次の曲を選択
+    // 次のトラックを選択
     const nextTrack = selectRandomTrack()
     console.log("Next track selected:", nextTrack)
 
-    // 次の曲を再生開始（これが重要）
+    // 次のトラックを再生開始
     setTimeout(() => {
-      startPlayback() // 明示的に再生を開始
-    }, 500)
+      if (audioRef.current) {
+        // AudioContextが一時停止している場合は再開
+        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+          audioContextRef.current.resume().catch((err) => {
+            console.error("Failed to resume AudioContext after track ended:", err)
+          })
+        }
+
+        // トラックを再生
+        audioRef.current
+          .play()
+          .then(() => {
+            console.log("Next track playback started successfully")
+            setIsPlaying(true)
+            setIsLoading(false)
+            setError(null)
+            startProgressTracking()
+            trackEndedRef.current = false
+          })
+          .catch((err) => {
+            console.error("Failed to play next track:", err)
+            startPlayback()
+          })
+      } else {
+        startPlayback()
+      }
+    }, 300)
   }, [selectRandomTrack, startPlayback, stopProgressTracking])
 
-  // Skip to next track
+  // 次のトラックにスキップ
   const skipToNext = () => {
     console.log("Skipping to next track")
     stopProgressTracking()
@@ -438,11 +410,9 @@ export default function MusicPlayer() {
     selectRandomTrack()
   }
 
-  // Handle audio errors
+  // オーディオエラーの処理
   const handleError = (e: React.SyntheticEvent<HTMLAudioElement, Event>) => {
     console.error("Audio error event:", e)
-
-    // Try to get more detailed error information
     const target = e.target as HTMLAudioElement
     console.error("Audio error code:", target.error?.code)
     console.error("Audio error message:", target.error?.message)
@@ -450,32 +420,30 @@ export default function MusicPlayer() {
     setError(`Error playing the track: ${target.error?.message || "Unknown error"}`)
     stopProgressTracking()
 
-    // Try to recover by selecting a different track after a few retries
+    // リトライ回数が少ない場合は同じトラックを再試行
     if (retryCount < 3) {
       console.log(`Retry attempt ${retryCount + 1}/3`)
       setRetryCount((prev) => prev + 1)
 
-      // Try to reload the same track first
       if (audioRef.current) {
         audioRef.current.load()
-
         setTimeout(() => {
           if (audioRef.current) {
-            audioRef.current.play().catch((err) => {
-              console.error("Retry playback error:", err)
-              // If still failing, try a different track
+            audioRef.current.play().catch(() => {
+              // 再試行が失敗した場合は別のトラックを選択
               selectRandomTrack()
             })
           }
         }, 1000)
       }
     } else {
+      // 最大リトライ回数に達した場合は別のトラックを選択
       console.log("Max retries reached, selecting a different track")
       selectRandomTrack()
     }
   }
 
-  // Toggle mute
+  // ミュートの切り替え
   const toggleMute = () => {
     if (audioRef.current) {
       audioRef.current.muted = !muted
@@ -483,7 +451,7 @@ export default function MusicPlayer() {
     }
   }
 
-  // Retry current track
+  // 現在のトラックを再試行
   const retryCurrentTrack = async () => {
     if (!audioRef.current || !currentTrack) return
 
@@ -493,21 +461,14 @@ export default function MusicPlayer() {
     setCurrentTime(0)
 
     try {
-      // Ensure AudioContext is resumed
+      // AudioContextが再開されていることを確認
       if (audioContextRef.current && audioContextRef.current.state === "suspended") {
         await audioContextRef.current.resume()
         console.log("AudioContext resumed before retry")
       }
 
-      // Force reload the audio element
-      const currentSrc = `/music/${currentTrack}`
-      audioRef.current.innerHTML = ""
-      const source = document.createElement("source")
-      source.src = currentSrc
-      source.type = "audio/mpeg"
-      audioRef.current.appendChild(source)
-
-      // Reload the audio element
+      // オーディオ要素を強制的に再ロード
+      audioRef.current.src = `/music/${currentTrack}`
       audioRef.current.load()
 
       setTimeout(async () => {
@@ -525,7 +486,7 @@ export default function MusicPlayer() {
             setError("Failed to play the track. Please try again.")
           }
         }
-      }, 500)
+      }, 300)
     } catch (err) {
       console.error("Error during retry:", err)
       setIsLoading(false)
@@ -533,7 +494,7 @@ export default function MusicPlayer() {
     }
   }
 
-  // Reset audio system
+  // オーディオシステムのリセット
   const resetAudioSystem = async () => {
     setIsLoading(true)
     setError(null)
@@ -541,34 +502,28 @@ export default function MusicPlayer() {
     stopProgressTracking()
 
     try {
-      // Close existing AudioContext
+      // 既存のAudioContextを閉じる
       if (audioContextRef.current) {
         await audioContextRef.current.close()
         audioContextRef.current = null
       }
 
-      // Create new AudioContext
+      // 新しいAudioContextを作成
       audioContextRef.current = new (
         window.AudioContext ||
         (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       )()
       console.log("AudioContext reset with state:", audioContextRef.current.state)
 
-      // Force reload the audio element
+      // オーディオ要素を強制的に再ロード
       if (audioRef.current && currentTrack) {
-        const currentSrc = `/music/${currentTrack}`
-        audioRef.current.innerHTML = ""
-        const source = document.createElement("source")
-        source.src = currentSrc
-        source.type = "audio/mpeg"
-        audioRef.current.appendChild(source)
+        audioRef.current.src = `/music/${currentTrack}`
         audioRef.current.load()
       }
 
       setIsLoading(false)
 
-      // If we were on the start overlay, keep it there
-      // Otherwise try to play again
+      // スタートオーバーレイが表示されていない場合は再生を試みる
       if (!showStartOverlay) {
         startPlayback()
       }
@@ -579,7 +534,7 @@ export default function MusicPlayer() {
     }
   }
 
-  // Handle metadata loaded (get duration)
+  // メタデータがロードされたときの処理（再生時間の取得）
   const handleMetadataLoaded = () => {
     if (audioRef.current) {
       setDuration(audioRef.current.duration)
@@ -587,8 +542,7 @@ export default function MusicPlayer() {
     }
   }
 
-  // useEffect内の曲変更時の処理も改善します
-  // Effect to handle track changes
+  // トラック変更時の処理
   useEffect(() => {
     if (!audioRef.current || !currentTrack) return
 
@@ -597,18 +551,11 @@ export default function MusicPlayer() {
     setCurrentTime(0)
     stopProgressTracking()
 
-    // Force reload the audio element
-    const currentSrc = `/music/${currentTrack}`
-    audioRef.current.innerHTML = ""
-    const source = document.createElement("source")
-    source.src = currentSrc
-    source.type = "audio/mpeg"
-    audioRef.current.appendChild(source)
-
-    // Load the new track
+    // オーディオ要素を強制的に再ロード
+    audioRef.current.src = `/music/${currentTrack}`
     audioRef.current.load()
 
-    // If we were already playing or if this change was triggered by track ending, try to play the new track
+    // 既に再生中だった場合、または曲の終了によるトラック変更の場合は新しいトラックを再生
     if (isPlaying || trackEndedRef.current) {
       setTimeout(() => {
         if (audioRef.current) {
@@ -629,17 +576,17 @@ export default function MusicPlayer() {
               setError("Failed to play the new track. Please try again.")
             })
         }
-      }, 500)
+      }, 300)
     } else {
       setIsLoading(false)
     }
   }, [currentTrack, isPlaying, startProgressTracking, stopProgressTracking])
 
-  // Check if audio is actually playing
+  // オーディオが実際に再生されているかチェック
   useEffect(() => {
     if (!isPlaying || !audioRef.current) return
 
-    // Check every second if audio is actually playing
+    // 1秒ごとにオーディオが実際に再生されているかチェック
     const interval = setInterval(() => {
       if (audioRef.current && audioRef.current.paused && isPlaying) {
         console.warn("Audio is marked as playing but is actually paused")
@@ -651,13 +598,13 @@ export default function MusicPlayer() {
     return () => clearInterval(interval)
   }, [isPlaying, stopProgressTracking])
 
-  // Handle visibility change (tab switching)
+  // 可視性変更（タブ切り替え）の処理
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === "visible") {
         console.log("Page became visible, checking audio system")
 
-        // Resume AudioContext if it's suspended
+        // AudioContextが一時停止している場合は再開
         if (audioContextRef.current && audioContextRef.current.state === "suspended") {
           try {
             await audioContextRef.current.resume()
@@ -667,7 +614,7 @@ export default function MusicPlayer() {
           }
         }
 
-        // If we were playing but audio is paused, try to resume
+        // 再生中だがオーディオが一時停止している場合は再開を試みる
         if (isPlaying && audioRef.current && audioRef.current.paused) {
           try {
             await audioRef.current.play()
@@ -680,7 +627,7 @@ export default function MusicPlayer() {
           }
         }
       } else {
-        // Page is hidden, pause progress tracking to save resources
+        // ページが非表示の場合、リソースを節約するためにプログレス追跡を一時停止
         if (isPlaying) {
           stopProgressTracking()
         }
@@ -694,11 +641,42 @@ export default function MusicPlayer() {
     }
   }, [isPlaying, startProgressTracking, stopProgressTracking])
 
-  // Calculate progress percentage
+  // 曲の終わりを検出するための時間更新ハンドラ
+  const handleTimeUpdate = useCallback(() => {
+    if (audioRef.current && audioRef.current.duration > 0) {
+      const timeLeft = audioRef.current.duration - audioRef.current.currentTime
+
+      // 残り時間が0.1秒未満で、まだ終了処理が行われていない場合は次の曲へ
+      if (timeLeft < 0.1 && !trackEndedRef.current && audioRef.current.duration > 1) {
+        console.log("Force ending track due to end proximity")
+        handleTrackEnded()
+      }
+    }
+  }, [handleTrackEnded])
+
+  // 曲の終了イベントを確実に検出するための追加リスナー
+  useEffect(() => {
+    if (!audioRef.current) return
+
+    const audioElement = audioRef.current
+    const endedHandler = () => {
+      console.log("ENDED EVENT FIRED DIRECTLY")
+      handleTrackEnded()
+    }
+
+    audioElement.addEventListener("ended", endedHandler)
+
+    return () => {
+      audioElement.removeEventListener("ended", endedHandler)
+    }
+  }, [audioRef, handleTrackEnded])
+
+  // プログレスパーセンテージの計算
   const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0
 
   return (
     <div className="space-y-4">
+      {/* エラー表示 */}
       {error && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -730,7 +708,7 @@ export default function MusicPlayer() {
 
       <Card className="bg-transparent border-0 shadow-none overflow-hidden">
         <div className="relative">
-          {/* Audio Visualizer */}
+          {/* オーディオビジュアライザー */}
           <div className="h-[70vh] w-full">
             <AudioVisualizer
               audioElement={audioRef.current}
@@ -739,43 +717,42 @@ export default function MusicPlayer() {
             />
           </div>
 
-          {/* Full-width Progress Bar */}
+          {/* プログレスバー */}
           <div className="absolute bottom-[120px] left-0 right-0 w-full">
-            {/* Time Display */}
+            {/* 時間表示 */}
             <div className="flex justify-between px-4 mb-1 text-white/70 text-xs">
               <span>{formatTime(currentTime)}</span>
               <span>{formatTime(duration)}</span>
             </div>
 
-            {/* Interactive Progress Bar */}
+            {/* インタラクティブなプログレスバー */}
             <div
               ref={progressBarRef}
-              className="w-full h-[3px] bg-white/20 cursor-pointer relative overflow-hidden group"
-              onMouseDown={handleProgressBarDown}
-              onTouchStart={handleProgressBarDown}
+              className="w-full h-4 bg-transparent cursor-pointer relative group"
+              onClick={handleProgressBarClick}
+              onMouseDown={handleProgressBarMouseDown}
+              onTouchStart={handleProgressBarTouchStart}
             >
-              {/* Progress Fill */}
+              {/* バーの背景 */}
+              <div className="absolute top-1/2 left-0 w-full h-1 -mt-0.5 bg-white/20 rounded-full"></div>
+
+              {/* プログレスフィル */}
               <div
-                className="absolute top-0 left-0 h-full bg-gradient-to-r from-transparent via-white to-transparent"
+                className="absolute top-1/2 left-0 h-1 -mt-0.5 bg-white rounded-full"
                 style={{ width: `${progressPercentage}%` }}
-              />
+              ></div>
 
-              {/* Hover Effect - Makes the bar appear thicker on hover */}
-              <div className="absolute top-0 left-0 w-full h-full opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="w-full h-[5px] -mt-1 bg-white/10"></div>
-              </div>
-
-              {/* Drag Handle */}
+              {/* ドラッグハンドル */}
               <div
-                className="absolute top-1/2 h-[10px] w-[10px] bg-white rounded-full shadow-lg transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                className={`absolute top-1/2 h-3 w-3 bg-white rounded-full shadow-lg transform -translate-y-1/2 transition-opacity ${isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 style={{
-                  left: `calc(${progressPercentage}% - 5px)`,
-                  display: progressPercentage > 0 ? "block" : "none",
+                  left: `calc(${progressPercentage}% - 6px)`,
                 }}
-              />
+              ></div>
             </div>
           </div>
 
+          {/* スタートオーバーレイ */}
           {showStartOverlay && currentTrack && !window.location.href.includes("?robot") && (
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-10">
               <motion.div
@@ -808,17 +785,17 @@ export default function MusicPlayer() {
             </div>
           )}
 
-          {/* Loading Overlay */}
+          {/* ローディングオーバーレイ */}
           {isLoading && !showStartOverlay && (
             <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center pointer-events-none">
               <RefreshCw className="h-12 w-12 text-white animate-spin" />
             </div>
           )}
 
-          {/* Controls Overlay */}
+          {/* コントロールオーバーレイ */}
           <div className="absolute bottom-0 left-0 right-0 bg-black/30 backdrop-blur-sm p-6">
             <div className="flex items-center justify-between">
-              {/* Track info */}
+              {/* トラック情報 */}
               <div className="flex items-center space-x-4">
                 <div className="bg-gradient-to-br from-purple-500 to-blue-600 p-3 rounded-xl shadow-lg">
                   <Music4 className="h-8 w-8 text-white" />
@@ -838,7 +815,7 @@ export default function MusicPlayer() {
                 </div>
               </div>
 
-              {/* Controls */}
+              {/* コントロール */}
               <div className="flex space-x-4">
                 <Button
                   variant="outline"
@@ -879,10 +856,13 @@ export default function MusicPlayer() {
         </div>
       </Card>
 
-      {/* Hidden audio element */}
+      {/* 非表示のオーディオ要素 */}
       <audio
         ref={audioRef}
-        onEnded={handleTrackEnded}
+        onEnded={() => {
+          console.log("onEnded event fired from JSX")
+          handleTrackEnded()
+        }}
         onError={handleError}
         onPlay={() => {
           console.log("Audio play event fired")
@@ -891,17 +871,10 @@ export default function MusicPlayer() {
         onPause={() => {
           console.log("Audio pause event fired")
           setIsPlaying(false)
+          stopProgressTracking()
         }}
         onLoadedMetadata={handleMetadataLoaded}
-        onTimeUpdate={() => {
-          // 曲の終わり近くに来たら確認ログを出力（デバッグ用）
-          if (audioRef.current && audioRef.current.duration > 0) {
-            const timeLeft = audioRef.current.duration - audioRef.current.currentTime
-            if (timeLeft < 0.5) {
-              console.log("Track almost ended, time left:", timeLeft)
-            }
-          }
-        }}
+        onTimeUpdate={handleTimeUpdate}
         preload="auto"
       >
         {currentTrack && <source src={`/music/${currentTrack}`} type="audio/mpeg" />}
